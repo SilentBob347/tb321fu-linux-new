@@ -1,0 +1,231 @@
+#!/usr/bin/env python3
+import sys
+import os
+import signal
+import time
+import dbus
+from dbus.mainloop.glib import DBusGMainLoop
+from gi.repository import GLib, Gio
+
+ORIENTATION_MAP = {
+    'normal': 0,
+    'left-up': 1,
+    'bottom-up': 2,
+    'right-up': 3,
+}
+
+class AutoRotator:
+    def __init__(self):
+        self.session_bus = dbus.SessionBus()
+        self.system_bus = dbus.SystemBus()
+        
+        self.settings = None
+        try:
+            self.settings = Gio.Settings(schema_id='org.gnome.settings-daemon.peripherals.touchscreen')
+            self.settings.connect('changed::orientation-lock', self.on_orientation_lock_changed)
+        except Exception as e:
+            print(f"[!] Warning: Could not connect to orientation-lock settings: {e}", flush=True)
+
+        self.display_config = self.session_bus.get_object(
+            'org.gnome.Mutter.DisplayConfig',
+            '/org/gnome/Mutter/DisplayConfig'
+        )
+
+        self.sensor_proxy = None
+        self.sensor_iface = None
+        self.props_iface = None
+
+        self.system_bus.add_signal_receiver(
+            self.on_name_owner_changed,
+            signal_name='NameOwnerChanged',
+            dbus_interface='org.freedesktop.DBus',
+            arg0='net.hadess.SensorProxy'
+        )
+
+        self.connect_sensor()
+
+    def connect_sensor(self):
+        try:
+            self.sensor_proxy = self.system_bus.get_object(
+                'net.hadess.SensorProxy',
+                '/net/hadess/SensorProxy'
+            )
+            self.sensor_iface = dbus.Interface(self.sensor_proxy, 'net.hadess.SensorProxy')
+            self.props_iface = dbus.Interface(self.sensor_proxy, 'org.freedesktop.DBus.Properties')
+            self.sensor_iface.ClaimAccelerometer()
+            print("[+] Accelerometer claimed successfully", flush=True)
+            self.props_iface.connect_to_signal('PropertiesChanged', self.on_properties_changed)
+
+            current_orientation = str(self.props_iface.Get('net.hadess.SensorProxy', 'AccelerometerOrientation'))
+            print(f"[*] Initial orientation: {current_orientation}", flush=True)
+            self.apply_orientation(current_orientation)
+        except Exception as e:
+            print(f"[!] Sensor connect error: {e}", flush=True)
+
+    def on_name_owner_changed(self, name, old_owner, new_owner):
+        if name == 'net.hadess.SensorProxy' and new_owner:
+            print(f"[*] SensorProxy service appeared on D-Bus ({new_owner}), reconnecting...", flush=True)
+            GLib.timeout_add(1000, self._delayed_reconnect)
+
+    def _delayed_reconnect(self):
+        self.connect_sensor()
+        return False
+
+    def cleanup(self):
+        try:
+            if self.sensor_iface:
+                self.sensor_iface.ReleaseAccelerometer()
+        except Exception:
+            pass
+
+    def is_locked(self):
+        if self.settings:
+            return bool(self.settings.get_boolean('orientation-lock'))
+        return False
+
+    def on_orientation_lock_changed(self, settings, key):
+        locked = settings.get_boolean(key)
+        print(f"[*] Orientation lock changed: {locked}", flush=True)
+        if not locked:
+            try:
+                current_orientation = str(self.props_iface.Get('net.hadess.SensorProxy', 'AccelerometerOrientation'))
+                self.apply_orientation(current_orientation)
+            except Exception as e:
+                print(f"[!] Error reading orientation: {e}", flush=True)
+
+    def on_properties_changed(self, interface_name, changed_properties, invalidated_properties):
+        if 'AccelerometerOrientation' in changed_properties:
+            orientation = str(changed_properties['AccelerometerOrientation'])
+            print(f"[*] SensorProxy reported orientation: {orientation}", flush=True)
+            self.apply_orientation(orientation)
+
+    def apply_orientation(self, orientation):
+        if self.is_locked():
+            print("[*] Screen rotation is locked in settings. Skipping.", flush=True)
+            return
+
+        if orientation not in ORIENTATION_MAP:
+            return
+
+        target_transform = ORIENTATION_MAP[orientation]
+
+        try:
+            state = self.display_config.GetCurrentState(dbus_interface='org.gnome.Mutter.DisplayConfig')
+        except Exception as e:
+            print(f"[!] Error calling GetCurrentState: {e}", flush=True)
+            return
+
+        serial = state[0]
+        monitors_raw = state[1]
+        logical_monitors_raw = state[2]
+        props_raw = state[3]
+
+        builtin_connector = None
+        current_modes = {}
+        underscanning = {}
+
+        for m in monitors_raw:
+            conn = str(m[0][0])
+            m_props = m[2]
+            if bool(m_props.get('is-builtin', False)):
+                builtin_connector = conn
+            underscanning[conn] = bool(m_props.get('is-underscanning', False))
+
+            for mode in m[1]:
+                mode_props = mode[6]
+                if bool(mode_props.get('is-current', False)):
+                    current_modes[conn] = str(mode[0])
+                    break
+
+        if not builtin_connector:
+            if monitors_raw:
+                builtin_connector = str(monitors_raw[0][0][0])
+            else:
+                return
+
+        needs_change = False
+        for lm in logical_monitors_raw:
+            for m in lm[5]:
+                if str(m[0]) == builtin_connector:
+                    if int(lm[3]) != target_transform:
+                        needs_change = True
+                    break
+
+        if not needs_change:
+            return
+
+        print(f"[+] Rotating built-in display ({builtin_connector}) to transform {target_transform} ({orientation})", flush=True)
+
+        logical_monitors = []
+        for lm in logical_monitors_raw:
+            x = int(lm[0])
+            y = int(lm[1])
+            scale = float(lm[2])
+            transform = int(lm[3])
+            is_primary = bool(lm[4])
+
+            is_builtin_lm = False
+            lm_monitors = []
+            for m in lm[5]:
+                conn = str(m[0])
+                if conn == builtin_connector:
+                    is_builtin_lm = True
+                mode_id = current_modes.get(conn, '')
+                m_props = dbus.Dictionary({
+                    'enable_underscanning': dbus.Boolean(underscanning.get(conn, False))
+                }, signature='sv')
+                lm_monitors.append(dbus.Struct((dbus.String(conn), dbus.String(mode_id), m_props), signature='ssa{sv}'))
+
+            if is_builtin_lm:
+                transform = target_transform
+
+            lm_monitors_arr = dbus.Array(lm_monitors, signature='(ssa{sv})')
+            lm_struct = dbus.Struct((
+                dbus.Int32(x),
+                dbus.Int32(y),
+                dbus.Double(scale),
+                dbus.UInt32(transform),
+                dbus.Boolean(is_primary),
+                lm_monitors_arr
+            ), signature='iiduba(ssa{sv})')
+            logical_monitors.append(lm_struct)
+
+        logical_monitors_arr = dbus.Array(logical_monitors, signature='(iiduba(ssa{sv}))')
+        properties = dbus.Dictionary({}, signature='sv')
+        if 'layout-mode' in props_raw:
+            properties['layout-mode'] = dbus.UInt32(props_raw['layout-mode'], variant_level=1)
+
+        method = dbus.UInt32(1)  # temporary
+
+        try:
+            self.display_config.ApplyMonitorsConfig(
+                dbus.UInt32(serial),
+                method,
+                logical_monitors_arr,
+                properties,
+                dbus_interface='org.gnome.Mutter.DisplayConfig'
+            )
+            print(f"[✓] ApplyMonitorsConfig succeeded: transform={target_transform}", flush=True)
+        except dbus.exceptions.DBusException as e:
+            print(f"[!] ApplyMonitorsConfig DBus error: {e}", flush=True)
+
+def main():
+    DBusGMainLoop(set_as_default=True)
+    loop = GLib.MainLoop()
+    rotator = AutoRotator()
+
+    def sig_handler(sig, frame):
+        print("\nStopping auto-rotator...", flush=True)
+        rotator.cleanup()
+        loop.quit()
+
+    signal.signal(signal.SIGINT, sig_handler)
+    signal.signal(signal.SIGTERM, sig_handler)
+
+    try:
+        loop.run()
+    except Exception as e:
+        print(f"Error in main loop: {e}", flush=True)
+
+if __name__ == '__main__':
+    main()

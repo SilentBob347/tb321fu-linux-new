@@ -1,0 +1,6 @@
+id=tb321fu-switch-to-linux
+name=Switch to Linux (TB321FU)
+version=1.0.0
+versionCode=1
+author=tb321fu-linux
+description=Boots the Linux image in boot_a on Lenovo Legion Y700 Gen 3 (TB321FU). Use the Action button to switch.

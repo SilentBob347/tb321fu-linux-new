@@ -1,0 +1,10 @@
+#!/bin/bash
+# GUI confirmation wrapper for back-to-android using Zenity
+if zenity --question \
+    --title="Перезапуск в Android" \
+    --text="Перезагрузить планшет в систему Android (ZUI)?" \
+    --ok-label="Перезагрузить" \
+    --cancel-label="Отмена" \
+    --width=350; then
+    sudo /usr/local/sbin/back-to-android
+fi

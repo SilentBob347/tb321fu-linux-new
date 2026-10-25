@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Перезапуск в Android
+Comment=Перезагрузить планшет в систему Android
+Exec=/usr/local/bin/back-to-android-gui
+Icon=phone-symbolic
+Terminal=false
+Type=Application
+Categories=System;Utility;
+Keywords=Android;Reboot;Перезагрузка;Андроид;

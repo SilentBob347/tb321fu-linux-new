@@ -1,0 +1,14 @@
+{
+  "name": "Reboot to Android",
+  "description": "Adds a Reboot to Android option in the GNOME power/shutdown menu",
+  "uuid": "reboot-to-android@sotiomake",
+  "shell-version": [
+    "45",
+    "46",
+    "47",
+    "48",
+    "49",
+    "50"
+  ],
+  "version": 1
+}

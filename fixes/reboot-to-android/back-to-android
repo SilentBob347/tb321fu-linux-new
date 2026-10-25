@@ -1,0 +1,46 @@
+#!/bin/busybox sh
+# SPDX-License-Identifier: MIT
+# back-to-android: put the Android kernel back into boot_a from the running
+# Linux, then reboot into it. Installed on the Linux side as
+# /usr/local/sbin/back-to-android (also used by the emergency key combo).
+#
+# The Android image is kept in boot_b, which the tablet never boots (slot _b
+# is unbootable; virtual A/B). It is copied back to boot_a to restore Android boot.
+
+set -eu
+
+BOOT_A="/dev/disk/by-partlabel/boot_a"
+BOOT_B="/dev/disk/by-partlabel/boot_b"
+CURRENT_BACKUP="/var/lib/tb321fu/linux-current.img"
+
+log() { echo "[back-to-android] $*"; }
+err() { echo "[back-to-android] ERROR: $*" >&2; exit 1; }
+
+[ "$(id -u)" -eq 0 ] || err "Must run as root."
+[ -b "$BOOT_A" ] || err "Cannot find $BOOT_A"
+[ -b "$BOOT_B" ] || err "Cannot find $BOOT_B"
+
+# 1. Back up running Linux kernel image if not already saved
+mkdir -p /var/lib/tb321fu
+if [ ! -f "$CURRENT_BACKUP" ] || [ ! -s "$CURRENT_BACKUP" ]; then
+    log "Saving running Linux boot_a to $CURRENT_BACKUP..."
+    dd if="$BOOT_A" of="$CURRENT_BACKUP" bs=4M count=24 conv=fsync status=none
+fi
+
+# 2. Verify Android boot image on boot_b
+EXPECTED_SHA="${1:-}"
+ACTUAL_SHA=$(dd if="$BOOT_B" bs=4M count=24 status=none | sha256sum | awk '{print $1}')
+log "Android boot_b SHA-256: $ACTUAL_SHA"
+
+if [ -n "$EXPECTED_SHA" ] && [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
+    err "SHA-256 mismatch! Expected $EXPECTED_SHA but got $ACTUAL_SHA"
+fi
+
+# 3. Copy Android kernel from boot_b to boot_a
+log "Restoring Android kernel to boot_a..."
+dd if="$BOOT_B" of="$BOOT_A" bs=4M count=24 conv=fsync status=none
+sync
+
+# 4. Trigger reboot into Android
+log "Rebooting tablet into Android..."
+reboot

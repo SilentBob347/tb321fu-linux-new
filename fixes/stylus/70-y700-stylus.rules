@@ -1,0 +1,7 @@
+# Lenovo Legion Y700 Gen 3 (TB321FU) Stylus Integration & Wayland Rotation Rule
+ACTION=="add|change", KERNEL=="event*", ATTRS{name}=="NVTCapacitivePen", \
+  ENV{EVDEV_ABS_00}="::136", \
+  ENV{EVDEV_ABS_01}="::135", \
+  ENV{ID_INPUT_TABLET_INTEGRATED}="1", \
+  ENV{WL_OUTPUT}="DSI-1", \
+  IMPORT{builtin}="keyboard"

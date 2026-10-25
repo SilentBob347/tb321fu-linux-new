@@ -1,0 +1,24 @@
+# Ignore large disk/rootfs images and archives (>100MB)
+*.img
+*.img.gz
+*.img.7z
+*.tar.gz
+*.bin
+*.iso
+
+# Allow specific small boot/EFI and firmware files
+!boot/EFI/BOOT/*
+!firmware_fix/**
+
+# Ignore private network credentials
+wifi-zone5g.yaml
+*.yaml
+
+# Ignore local temporary build directories
+out/
+build/
+*.bak*
+.grub-build.*
+*~
+*.swp
+*.tmp

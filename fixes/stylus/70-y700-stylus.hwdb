@@ -1,0 +1,4 @@
+# Lenovo Legion Y700 Gen 3 (TB321FU) Stylus Digitizer Scale Fix
+evdev:name:NVTCapacitivePen:*
+ EVDEV_ABS_00=::136
+ EVDEV_ABS_01=::135

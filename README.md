@@ -1,5 +1,7 @@
 # Lenovo Legion Y700 Gen 3 (TB321FU) Linux Dual-Boot & Community Fixes
 
+[English](README.md) | [Русская версия](README.ru.md)
+
 Non-destructive dual-boot Linux port and comprehensive hardware fixes for the **Lenovo Legion Y700 Gen 3 (`TB321FU`)**, powered by the **Qualcomm Snapdragon 8 Gen 3 (`SM8650` / `pineapple`)**.
 
 Based on the dual-boot architecture of [tb323fu-linux](https://github.com/joonhoekim/tb323fu-linux) by Joonhoe Kim, combined with the mainline SM8650 bring-up from GUF296 and community improvements.
@@ -47,7 +49,7 @@ This single command automatically deploys:
 ## 🛠️ Summary of Applied Fixes
 
 ### 1. USB-C External Monitor & Audio Fix (`fixes/audio/`)
-* **Problem:** Connecting a Type-C cable, hub, or external monitor (DisplayPort Alt Mode) caused all tablet sound to disappear, leaving only `auto_null` ("Холостой выход"). Video playback on YouTube froze indefinitely.
+* **Problem:** Connecting a Type-C cable, hub, or external monitor (DisplayPort Alt Mode) caused all tablet sound to disappear, leaving only `auto_null` ("Dummy output"). Video playback on YouTube froze indefinitely.
 * **Cause:** DisplayPort AUX channel lines in Type-C share physical SBU pins with Qualcomm WCD939x analog headset detection (MBHC). Cable connection falsely triggered "Headphones plugged in". Stock UCM had `JackHWMute "Speaker"` and a missing mixer element, crashing PipeWire's sink.
 * **Solution:** Removed hardware muting, eliminated dead mixer controls, and set internal speakers and microphone to permanent high priority (`200`). Speakers and mic now play simultaneously without interruption.
 
@@ -58,9 +60,9 @@ This single command automatically deploys:
   * [`70-y700-stylus.rules`](fixes/stylus/70-y700-stylus.rules): Declares `ID_INPUT_TABLET_INTEGRATED=1` and assigns `WL_OUTPUT=DSI-1` so Wayland compositor rotates the pen together with the display.
 
 ### 3. Native "Reboot to Android" Extension (`fixes/reboot-to-android/`)
-* Built-in GNOME Shell extension (`reboot-to-android@sotiomake`) adding **«Перезапуск в Android…»** to the system power menu (right next to Log Out / Power Off).
+* Built-in GNOME Shell extension (`reboot-to-android@sotiomake`) adding **«Reboot to Android…»** to the system power menu (right next to Log Out / Power Off).
 * Shows a standard confirmation dialog and cleanly swaps the boot image and reboots into ZUI.
-* Desktop shortcut on `~/Desktop` and `~/Рабочий стол` for easy access by children.
+* Desktop shortcut on `~/Desktop` for easy 1-click access.
 * Emergency hardware combo: **Hold Volume Up + Volume Down for 10 seconds** to trigger reboot if GUI freezes.
 
 ### 4. Camera CAMSS Endpoint Fix (`patches/dts-camera-fix.patch`)
@@ -69,28 +71,28 @@ This single command automatically deploys:
 
 ---
 
-## 💾 Установка и Dual-Boot: Внутренняя память UFS (50/50 Split)
+## 💾 Dual-Boot Installation: Internal UFS Storage (50/50 Split)
 
-В отличие от старых портов, стирающих Android, здесь используется **полноценный неразрушающий Dual-Boot на внутреннем UFS 4.0 накопителе** без необходимости подключать внешние флешки или SSD.
+Unlike legacy single-boot ports that wipe Android (`super` and `userdata`), this project enables **true non-destructive Dual-Boot directly on internal UFS 4.0 storage** without requiring external dongles or USB drives.
 
-📖 **Полная пошаговая инструкция с командами:** [**docs/internal-partitioning-and-installation.md**](docs/internal-partitioning-and-installation.md)
+📖 **Complete Step-by-Step Installation Guide:** [**docs/internal-partitioning-and-installation.md**](docs/internal-partitioning-and-installation.md) | [Русская версия](docs/internal-partitioning-and-installation.ru.md)
 
-### Краткий обзор процесса:
-1. **Разделение внутренней памяти UFS ([`tools/repartition-gpt.py`](tools/repartition-gpt.py)):**
-   * Считывается оригинальная таблица GPT (`/dev/block/sda`, размер сектора 4096 байт).
-   * Раздел `userdata` (`sda16`) сжимается до **228 ГБ** (под Android ZUI).
-   * В освободившемся месте создаются два новых раздела:
-     * `sda17` (`Y700BOOT`): **1.0 ГБ** (FAT32, загрузчик EFI, ядро, DTB, GRUB).
-     * `sda18` (`tb321fu-root`): **227.8 ГБ** (ext4, корневая файловая система Linux).
-   * Таблицы записываются обратно через `dd`, после чего Android форматирует уменьшенный `userdata`.
-2. **Разворачивание системы:**
-   * Загрузочный раздел `sda17` прошивается готовым образом `boot/y700boot.img` (содержит EFI/GRUB/ядро/DTB).
-   * Корневой раздел `sda18` форматируется в `ext4` и туда распаковывается архив корневой системы `rootfs.tar.gz`.
-3. **Бесшовное переключение слотов A/B:**
-   * Сток Android kernel сохранён в `boot_b`.
-   * В Android устанавливается модуль KernelSU / Magisk `android/switch-to-linux/`.
-   * **Переход в Linux:** 1 клик по кнопке *Action* в модуле KernelSU.
-   * **Возврат в Android:** 1 клик в меню выключения GNOME («Перезапуск в Android…») или на рабочем столе.
+### Process Overview:
+1. **Partitioning Internal UFS Storage ([`tools/repartition-gpt.py`](tools/repartition-gpt.py)):**
+   * Reads original GPT table from `/dev/block/sda` (4096-byte sector size).
+   * Shrinks `userdata` partition (`sda16`) to **228 GiB** (for Android ZUI).
+   * Creates two new dedicated partitions in the freed space:
+     * `sda17` (`Y700BOOT`): **1.0 GiB** (FAT32, EFI bootloader, kernel, DTB, GRUB).
+     * `sda18` (`tb321fu-root`): **227.8 GiB** (ext4, Linux root filesystem).
+   * Flashes GPT tables back via `dd`, followed by Android recovery wipe to adapt `userdata`.
+2. **System Deployment:**
+   * Bootloader partition `sda17` is written with `boot/y700boot.img` (contains EFI/GRUB/kernel/DTB).
+   * Root partition `sda18` is formatted as `ext4` and populated with `rootfs.tar.gz`.
+3. **Seamless A/B Slot Switching:**
+   * Stock Android kernel remains preserved in `boot_b`.
+   * KernelSU / Magisk module `android/switch-to-linux/` is installed in Android.
+   * **Booting to Linux:** 1 tap on the *Action* button in KernelSU / Magisk.
+   * **Booting to Android:** 1 tap in the GNOME shutdown menu ("Reboot to Android…") or on the Desktop.
 
 ---
 
@@ -98,9 +100,13 @@ This single command automatically deploys:
 
 ```
 tb321fu-linux/
-├── README.md                           # This documentation
+├── README.md                           # English documentation
+├── README.ru.md                        # Russian documentation
 ├── install-fixes.sh                    # Automated all-in-one fixes installer
 ├── .gitignore                          # Ignores large raw images (>100MB)
+├── docs/                               # Detailed guides
+│   ├── internal-partitioning-and-installation.md
+│   └── internal-partitioning-and-installation.ru.md
 ├── fixes/
 │   ├── audio/                          # ALSA UCM2 configs (external monitor fix)
 │   ├── stylus/                         # Stylus hwdb & udev calibration rules

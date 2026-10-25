@@ -1,153 +1,156 @@
-# Пошаговая инструкция: Разметка внутренней памяти UFS и установка Linux Dual-Boot на Lenovo Legion Y700 Gen 3 (TB321FU)
+# Step-by-Step Guide: Internal UFS Dual-Boot Partitioning & Installation on Lenovo Legion Y700 Gen 3 (TB321FU)
 
-В данном руководстве подробно описан процесс создания настоящего **неразрушающего Dual-Boot** с разделением внутренней UFS-памяти планшета (50% Android / 50% Linux), а также процесс разворачивания загрузочного раздела и корневой системы Ubuntu.
+[English](internal-partitioning-and-installation.md) | [Русская версия](internal-partitioning-and-installation.ru.md)
 
----
-
-## ⚠️ Важное замечание: почему именно внутренняя память, а не USB SSD?
-В загрузчике EDK2 UEFI для SM8650 драйвер контроллера Type-C (`FSA4480`) на текущем этапе не подаёт питание VBUS на порт до загрузки ядра Linux. В результате внешние USB-накопители не видны на этапе UEFI/GRUB.  
-Внутренняя быстрая память UFS 4.0 (`/dev/block/sda`) поддерживается нативным драйвером `UFSDxe`, благодаря чему система загружается с неё мгновенно и без внешних проводов.
+This guide walks you through setting up a **true non-destructive Dual-Boot** on the tablet's internal UFS 4.0 storage (50% Android ZUI / 50% Ubuntu Linux), including partition division, EFI bootloader setup, and root filesystem extraction.
 
 ---
 
-## 📋 Предварительные требования
-1. **Разблокированный загрузчик (Bootloader)** на планшете TB321FU.
-2. **Root-доступ в Android** (через KernelSU или Magisk).
-3. **Компьютер с Linux** (с установленными `adb`, `fastboot`, `python3`).
-4. Подключение планшета к компьютеру по кабелю USB-C с включённой «Отладкой по USB» в настройках разработчика Android.
+## ⚠️ Why Internal UFS Storage instead of USB SSD?
+In the current EDK2 UEFI bring-up for Qualcomm SM8650, the Type-C switch driver (`FSA4480`) does not supply VBUS power to external ports before the Linux kernel boots. Consequently, external USB drives are completely invisible to UEFI and GRUB.  
+In contrast, internal UFS 4.0 storage (`/dev/block/sda`) is handled natively by the `UFSDxe` UEFI driver and boots instantaneously with zero cables or external dongles attached.
 
 ---
 
-## Шаг 1. Резервное копирование таблицы GPT и стокового ядра
+## 📋 Prerequisites
+1. **Unlocked Bootloader** on the Lenovo Legion Y700 Gen 3 (`TB321FU`).
+2. **Root Access in Android** (via KernelSU or Magisk).
+3. **Host PC running Linux** with `adb`, `fastboot`, and `python3` installed.
+4. USB-C data cable connecting tablet to PC, with **USB Debugging** enabled in Android Developer Options.
 
-1. Сохраните оригинальную таблицу разделов GPT с диска `/dev/block/sda` (размер сектора UFS — 4096 байт):
+---
+
+## Step 1. Backup Stock GPT Table & Stock Kernel
+
+1. Dump the original GPT partition table from disk `/dev/block/sda` (UFS sector size is 4096 bytes):
    ```bash
    adb shell "su -c 'dd if=/dev/block/sda of=/data/local/tmp/gpt_stock.bin bs=4096 count=3'"
    adb pull /data/local/tmp/gpt_stock.bin android/gpt_stock.bin
    ```
-2. Сохраните стоковый загрузочный образ Android в неактивный слот `boot_b` (который планшет никогда не использует при виртуальном A/B):
+2. Backup the running stock Android boot image into inactive slot `boot_b` (virtual A/B tablets never boot slot `_b`):
    ```bash
    adb shell "su -c 'dd if=/dev/block/by-name/boot_a of=/dev/block/by-name/boot_b bs=4M count=24 conv=fsync'"
    ```
 
 ---
 
-## Шаг 2. Генерация новой таблицы разделов (50/50 Split)
+## Step 2. Generate New Partition Table (50/50 Split)
 
-Скрипт [`tools/repartition-gpt.py`](../tools/repartition-gpt.py) уменьшает раздел `userdata` (раздел 16) и создаёт два новых раздела в освободившемся месте:
-* **Раздел 16 (`userdata`)**: сжимается с 470 ГБ до **228.00 ГБ** (для Android).
-* **Раздел 17 (`Y700BOOT`)**: создаётся размером **1.00 ГБ** (тип `EFI System Partition`, FAT32).
-* **Раздел 18 (`tb321fu-root`)**: создаётся размером **227.82 ГБ** (тип `Linux Filesystem`, ext4).
+The [`tools/repartition-gpt.py`](../tools/repartition-gpt.py) script resizes partition 16 (`userdata`) and adds two new dedicated partitions in the freed space:
+* **Partition 16 (`userdata`)**: Shrunk from ~470 GiB down to **228.00 GiB** (for Android).
+* **Partition 17 (`Y700BOOT`)**: Created as **1.00 GiB** (type `EFI System Partition`, FAT32).
+* **Partition 18 (`tb321fu-root`)**: Created as **227.82 GiB** (type `Linux filesystem data`, ext4).
 
-Запустите скрипт на компьютере:
+Run the repartition script on your host PC:
 ```bash
 python3 tools/repartition-gpt.py
 ```
-Скрипт считает `android/gpt_stock.bin`, пересчитает контрольные суммы CRC32 и сгенерирует файлы:
-* `android/gpt_new_primary.bin` (LBA 0–2, 12288 байт)
-* `android/gpt_new_backup.bin` (Backup GPT в конце диска)
+The script parses `android/gpt_stock.bin`, updates partition bounds, calculates fresh CRC32 checksums, and produces:
+* `android/gpt_new_primary.bin` (LBA 0–2, 12,288 bytes)
+* `android/gpt_new_backup.bin` (Backup GPT at the end of the disk)
 
 ---
 
-## Шаг 3. Запись новой таблицы GPT на планшет
+## Step 3. Flash New GPT Table to Tablet
 
-1. Загрузите сгенерированные таблицы на планшет:
+1. Push the generated partition tables to the tablet:
    ```bash
    adb push android/gpt_new_primary.bin /data/local/tmp/
    adb push android/gpt_new_backup.bin /data/local/tmp/
    ```
-2. Запишите основную и резервную таблицы GPT:
+2. Write primary and backup GPT tables:
    ```bash
-   # Запись первичной таблицы GPT (LBA 0-2)
+   # Flash Primary GPT (LBA 0-2)
    adb shell "su -c 'dd if=/data/local/tmp/gpt_new_primary.bin of=/dev/block/sda bs=4096 count=3 conv=fsync'"
 
-   # Запись резервной таблицы GPT (в конец диска LBA 123365374)
+   # Flash Backup GPT (at disk end LBA 123365374)
    adb shell "su -c 'dd if=/data/local/tmp/gpt_new_backup.bin of=/dev/block/sda seek=123365374 bs=4096 count=2 conv=fsync'"
    sync
    ```
-3. **Сброс userdata (Factory Reset):**  
-   Поскольку размер раздела `userdata` изменился, файловая система F2FS Android должна быть отформатирована под новый размер:
-   * Перезагрузите планшет в Recovery и выполните **Wipe Data / Factory Reset** (либо через настройки Android: «Сброс до заводских настроек»).
-   * После перезагрузки Android запустится штатно, и в настройках накопителя будет отображаться ~256 ГБ памяти.
+3. **Android Factory Reset (Resize userdata):**  
+   Because the physical boundaries of `userdata` have changed, Android's F2FS filesystem must be re-formatted to match the new size:
+   * Reboot tablet into Recovery and perform **Wipe Data / Factory Reset** (or navigate to Android Settings -> System -> Reset Options -> Erase all data).
+   * After rebooting, Android will start fresh with ~256 GB total storage reported.
 
 ---
 
-## Шаг 4. Форматирование новых разделов `sda17` и `sda18`
+## Step 4. Format New Partitions (`sda17` & `sda18`)
 
-После первой загрузки настройте Android и верните Root (KernelSU / Magisk). Подключитесь по ADB:
+After Android boots up, complete initial setup and restore root access (KernelSU / Magisk). Open ADB shell:
 
 ```bash
-# 1. Форматируем раздел 17 в FAT32 с меткой Y700BOOT (сектор 4096)
+# 1. Format Partition 17 as FAT32 with label Y700BOOT (4K sector alignment)
 adb shell "su -c 'mkfs.vfat -F 32 -S 4096 -n Y700BOOT /dev/block/sda17'"
 
-# 2. Форматируем раздел 18 в ext4 с меткой tb321fu-root
+# 2. Format Partition 18 as ext4 with label tb321fu-root
 adb shell "su -c 'mke2fs -t ext4 -F -L tb321fu-root /dev/block/sda18'"
 ```
 
 ---
 
-## Шаг 5. Запись загрузочного раздела (`sda17`)
+## Step 5. Write Bootloader Partition (`sda17`)
 
-Раздел `sda17` содержит ядро Linux 7.1.1, DTB и загрузчик GRUB/EFI. Запишите готовый образ `y700boot.img`:
+Partition `sda17` holds the Linux 7.1.1 kernel, Device Tree Blob, and GRUB/EFI direct loader. Write the pre-built `y700boot.img` image directly:
 
 ```bash
-# Если образ в архиве .gz, сначала распакуйте: gzip -dk boot/y700boot.img.gz
+# If your image is compressed, unpack first: gzip -dk boot/y700boot.img.gz
 adb push boot/y700boot.img /data/local/tmp/
 adb shell "su -c 'dd if=/data/local/tmp/y700boot.img of=/dev/block/sda17 bs=4M conv=fsync && rm /data/local/tmp/y700boot.img'"
 ```
 
 ---
 
-## Шаг 6. Разворачивание корневой системы Ubuntu (`sda18`)
+## Step 6. Extract Ubuntu Root Filesystem (`sda18`)
 
-1. Смонтируйте раздел `sda18` во временную папку в Android:
+1. Mount partition `sda18` into a temporary directory in Android:
    ```bash
    adb shell "su -c 'mkdir -p /data/local/tmp/linux_root && mount -t ext4 /dev/block/sda18 /data/local/tmp/linux_root'"
    ```
-2. Отправьте архив корневой системы `rootfs.tar.gz` на планшет:
+2. Upload the rootfs tarball to the device:
    ```bash
    adb push rootfs.tar.gz /data/local/tmp/
    ```
-3. Распакуйте корневую систему с сохранением всех прав доступа:
+3. Extract rootfs preserving all Linux file permissions:
    ```bash
    adb shell "su -c 'tar -xzf /data/local/tmp/rootfs.tar.gz -C /data/local/tmp/linux_root/ && sync'"
    ```
-4. Удалите архив и отмонтируйте раздел:
+4. Clean up and unmount:
    ```bash
    adb shell "su -c 'rm /data/local/tmp/rootfs.tar.gz && umount /data/local/tmp/linux_root'"
    ```
 
 ---
 
-## Шаг 7. Установка модуля KernelSU / Magisk для переключения в Linux
+## Step 7. Install KernelSU / Magisk Dual-Boot Module
 
-1. На компьютере перейдите в папку `android/`:
+1. On your PC, navigate into the `android/` directory:
    ```bash
    cd android
    ./install-module.sh prepare-boot-b
    ./install-module.sh install
    ```
-2. В приложении KernelSU или Magisk на планшете появится модуль **«Switch to Linux (TB321FU)»**.
+2. In KernelSU or Magisk manager on the tablet, you will now see the module **«Switch to Linux (TB321FU)»**.
 
 ---
 
-## Шаг 8. Первый запуск Linux и установка фиксов оборудования
+## Step 8. First Boot into Linux & Apply Community Fixes
 
-1. В приложении KernelSU / Magisk нажмите кнопку **«Действие» (Action)** у модуля переключения.  
-   *Планшет запишет загрузчик Linux в `boot_a` и перезагрузится прямо в Ubuntu.*
-2. Дождитесь запуска GNOME и авторизуйтесь (по умолчанию: логин `sotiomake`, пароль `2141`).
-3. Запустите скрипт автоматической установки исправлений:
+1. In KernelSU / Magisk manager, tap the **Action** button next to *Switch to Linux*.  
+   *The tablet writes the Linux bootloader to `boot_a` and boots straight into Ubuntu.*
+2. Complete login in GNOME Wayland (default credentials: username `sotiomake`, password `2141`).
+3. Run the automated fixes installer:
    ```bash
-   cd ~/tb321fu-linux
+   git clone https://github.com/vitalo233-eng/tb321fu-linux.git
+   cd tb321fu-linux
    sudo ./install-fixes.sh
    ```
-4. Скрипт настроит звук для внешних мониторов, калибровку и автоповорот стилуса, автояркость и добавит пункт **«Перезапуск в Android…»** в меню выключения GNOME.
+4. The installer configures external display audio, stylus scaling and auto-rotation, auto-brightness, and integrates the **«Reboot to Android…»** button into the system power menu.
 
 ---
 
-## Как переключаться между системами в дальнейшем:
-* **Из Android в Linux:** Откройте KernelSU / Magisk -> нажмите **Action** на модуле *Switch to Linux*.
-* **Из Linux в Android:**
-  * Нажмите в правом верхнем углу меню питания -> **📱 «Перезапуск в Android…»**
-  * Или нажмите иконку **«Перезапуск в Android»** прямо на рабочем столе.
-  * *Аварийный способ:* Зажмите обе кнопки громкости (**Volume Up + Volume Down**) на 10 секунд при включении.
+## Switching Between OSes Anytime:
+* **Android -> Linux:** Open KernelSU / Magisk -> tap **Action** on *Switch to Linux*.
+* **Linux -> Android:**
+  * Click top-right status area -> Power menu -> **📱 «Reboot to Android…»**
+  * Or double-click the **«Reboot to Android»** icon on your Desktop.
+  * *Emergency fallback:* Hold **Volume Up + Volume Down** together for 10 seconds during startup.

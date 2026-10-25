@@ -69,19 +69,28 @@ This single command automatically deploys:
 
 ---
 
-## 💾 Dual-Boot Architecture: How It Works
+## 💾 Установка и Dual-Boot: Внутренняя память UFS (50/50 Split)
 
-Traditional single-boot ports overwrite Android partitions (`super` and `userdata`), destroying Android.  
-Our approach keeps Android 100% stock and safe:
+В отличие от старых портов, стирающих Android, здесь используется **полноценный неразрушающий Dual-Boot на внутреннем UFS 4.0 накопителе** без необходимости подключать внешние флешки или SSD.
 
-1. **Android System & Data:**  
-   - `sda16` (`userdata`) and `super` remain completely untouched.
-   - Linux runs either from an external USB-C SSD or a dedicated secondary partition.
-2. **A/B Slot Boot Switching:**  
-   - Slot `boot_b` safely stores the stock Android boot image.
-   - Slot `boot_a` runs the Linux bootloader (UEFI / GRUB `QCOMRAMP.EFI`).
-   - When switching to Android: `/usr/local/sbin/back-to-android` copies the Android kernel from `boot_b` into `boot_a`.
-   - When switching to Linux: In Android, tap **Switch to Linux** in the KernelSU / Magisk module to flash Linux kernel back into `boot_a`.
+📖 **Полная пошаговая инструкция с командами:** [**docs/internal-partitioning-and-installation.md**](docs/internal-partitioning-and-installation.md)
+
+### Краткий обзор процесса:
+1. **Разделение внутренней памяти UFS ([`tools/repartition-gpt.py`](tools/repartition-gpt.py)):**
+   * Считывается оригинальная таблица GPT (`/dev/block/sda`, размер сектора 4096 байт).
+   * Раздел `userdata` (`sda16`) сжимается до **228 ГБ** (под Android ZUI).
+   * В освободившемся месте создаются два новых раздела:
+     * `sda17` (`Y700BOOT`): **1.0 ГБ** (FAT32, загрузчик EFI, ядро, DTB, GRUB).
+     * `sda18` (`tb321fu-root`): **227.8 ГБ** (ext4, корневая файловая система Linux).
+   * Таблицы записываются обратно через `dd`, после чего Android форматирует уменьшенный `userdata`.
+2. **Разворачивание системы:**
+   * Загрузочный раздел `sda17` прошивается готовым образом `boot/y700boot.img` (содержит EFI/GRUB/ядро/DTB).
+   * Корневой раздел `sda18` форматируется в `ext4` и туда распаковывается архив корневой системы `rootfs.tar.gz`.
+3. **Бесшовное переключение слотов A/B:**
+   * Сток Android kernel сохранён в `boot_b`.
+   * В Android устанавливается модуль KernelSU / Magisk `android/switch-to-linux/`.
+   * **Переход в Linux:** 1 клик по кнопке *Action* в модуле KernelSU.
+   * **Возврат в Android:** 1 клик в меню выключения GNOME («Перезапуск в Android…») или на рабочем столе.
 
 ---
 

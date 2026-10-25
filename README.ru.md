@@ -73,7 +73,8 @@ This single command automatically deploys:
 
 В отличие от старых портов, стирающих Android, здесь используется **полноценный неразрушающий Dual-Boot на внутреннем UFS 4.0 накопителе** без необходимости подключать внешние флешки или SSD.
 
-📖 **Полная пошаговая инструкция с командами:** [**docs/internal-partitioning-and-installation.md**](docs/internal-partitioning-and-installation.md)
+📖 **Полная пошаговая инструкция с командами:** [**docs/internal-partitioning-and-installation.ru.md**](docs/internal-partitioning-and-installation.ru.md) | [English](docs/internal-partitioning-and-installation.md)  
+🔨 **Руководство по сборке образов (Boot и RootFS):** [**docs/building-images.ru.md**](docs/building-images.ru.md) | [English](docs/building-images.md)
 
 ### Краткий обзор процесса:
 1. **Разделение внутренней памяти UFS ([`tools/repartition-gpt.py`](tools/repartition-gpt.py)):**

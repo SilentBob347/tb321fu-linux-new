@@ -75,7 +75,8 @@ This single command automatically deploys:
 
 Unlike legacy single-boot ports that wipe Android (`super` and `userdata`), this project enables **true non-destructive Dual-Boot directly on internal UFS 4.0 storage** without requiring external dongles or USB drives.
 
-📖 **Complete Step-by-Step Installation Guide:** [**docs/internal-partitioning-and-installation.md**](docs/internal-partitioning-and-installation.md) | [Русская версия](docs/internal-partitioning-and-installation.ru.md)
+📖 **Complete Step-by-Step Installation Guide:** [**docs/internal-partitioning-and-installation.md**](docs/internal-partitioning-and-installation.md) | [Русская версия](docs/internal-partitioning-and-installation.ru.md)  
+🔨 **Image Building Guide (Boot & RootFS):** [**docs/building-images.md**](docs/building-images.md) | [Русская версия](docs/building-images.ru.md)
 
 ### Process Overview:
 1. **Partitioning Internal UFS Storage ([`tools/repartition-gpt.py`](tools/repartition-gpt.py)):**

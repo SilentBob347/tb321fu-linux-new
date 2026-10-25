@@ -30,7 +30,7 @@ Based on the dual-boot architecture of [tb323fu-linux](https://github.com/joonho
 If you already have Ubuntu or Kubuntu running on your TB321FU tablet, simply clone this repository and run:
 
 ```bash
-git clone https://github.com/sotiomake/tb321fu-linux.git
+git clone https://github.com/vitalo233-eng/tb321fu-linux.git
 cd tb321fu-linux
 sudo ./install-fixes.sh
 ```

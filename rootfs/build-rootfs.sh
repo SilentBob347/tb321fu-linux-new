@@ -69,7 +69,7 @@ ch apt-get -y -q dist-upgrade
 # 3. Install GNOME Desktop and Core Packages
 say "Installing minimal GNOME Wayland desktop and system utilities..."
 base_pkgs="systemd-resolved network-manager openssh-server sudo bluez pipewire \
-pipewire-pulse wireplumber alsa-ucm-conf alsa-utils iio-sensor-proxy dbus-user-session \
+pipewire-pulse wireplumber alsa-ucm-conf alsa-utils iio-sensor-proxy qrtr-tools hexagonrpcd dbus-user-session \
 polkitd rfkill locales tzdata vim-tiny less wpasupplicant wireless-regdb \
 mesa-vulkan-drivers libgl1-mesa-dri plymouth plymouth-theme-spinner fonts-noto-core \
 python3 python3-gi python3-pydbus"
@@ -99,14 +99,40 @@ if [ -f /usr/local/libexec/iio-sensor-proxy ]; then
     cat > "$TARGET_DIR/etc/systemd/system/iio-sensor-proxy.service.d/tb321fu-libssc.conf" << 'CONF_EOF'
 [Unit]
 StartLimitIntervalSec=0
+After=qrtr-ns.service hexagonrpcd.service
+Wants=qrtr-ns.service hexagonrpcd.service
 
 [Service]
 ExecStart=
 ExecStart=/usr/local/libexec/iio-sensor-proxy
-RestrictAddressFamilies=AF_QIPCRTR
+RestrictAddressFamilies=AF_UNIX AF_LOCAL AF_NETLINK AF_QIPCRTR
 Restart=always
 RestartSec=3
+TimeoutStopSec=3
+
+[Install]
+WantedBy=multi-user.target
 CONF_EOF
+
+    mkdir -p "$TARGET_DIR/etc/systemd/system/hexagonrpcd.service.d"
+    cat > "$TARGET_DIR/etc/systemd/system/hexagonrpcd.service.d/tb321fu.conf" << 'CONF_EOF'
+[Unit]
+StartLimitIntervalSec=0
+
+[Service]
+Restart=always
+RestartSec=2
+Environment=hexagonrpcd_device=/dev/fastrpc-adsp
+Environment=hexagonrpcd_fw_dir=/usr/local/share/y700-sns/hexagonfs
+ReadWritePaths=/usr/local/share/y700-sns/hexagonfs
+CONF_EOF
+
+    if [ -d "$TARGET_DIR/usr/local/share/y700-sns/hexagonfs" ]; then
+        mkdir -p "$TARGET_DIR/usr/local/share/y700-sns/hexagonfs/mnt/vendor/persist"
+        ln -sfn ../../../sensors "$TARGET_DIR/usr/local/share/y700-sns/hexagonfs/mnt/vendor/persist/sensors"
+        mkdir -p "$TARGET_DIR/usr/local/share/y700-sns/hexagonfs/vendor/etc"
+        ln -sfn ../../sensors "$TARGET_DIR/usr/local/share/y700-sns/hexagonfs/vendor/etc/sensors"
+    fi
 fi
 if [ -d /usr/local/lib/aarch64-linux-gnu ]; then
     mkdir -p "$TARGET_DIR/usr/local/lib/aarch64-linux-gnu"

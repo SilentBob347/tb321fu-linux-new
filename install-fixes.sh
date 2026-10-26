@@ -90,12 +90,52 @@ if [ -d "$SCRIPT_DIR/fixes/zram" ]; then
 fi
 
 # ------------------------------------------------------------------------------
-# 4. Power & Sensors (Auto-Brightness)
+# 4. Power & Sensors (Auto-Brightness & Auto-Rotate)
 # ------------------------------------------------------------------------------
-log "4/6 Installing Power & Ambient Sensor (ALS) profile..."
+log "4/6 Installing Sensors (Auto-Rotate & Auto-Brightness) & Power profile..."
 mkdir -p /etc/dconf/db/local.d
 cp "$SCRIPT_DIR/fixes/power-and-sensors/01-power" /etc/dconf/db/local.d/
 dconf update || true
+
+# Install required sensor packages
+if command -v apt-get >/dev/null 2>&1; then
+    pkgs_to_install=()
+    if ! dpkg -s qrtr-tools >/dev/null 2>&1; then pkgs_to_install+=(qrtr-tools); fi
+    if ! dpkg -s hexagonrpcd >/dev/null 2>&1; then pkgs_to_install+=(hexagonrpcd); fi
+    if [ ${#pkgs_to_install[@]} -gt 0 ]; then
+        apt-get update -qq || true
+        apt-get install -y -qq "${pkgs_to_install[@]}" || true
+    fi
+fi
+
+# Hexagon FS symlinks for DSP sensor config & registry resolution
+if [ -d /usr/local/share/y700-sns/hexagonfs ]; then
+    mkdir -p /usr/local/share/y700-sns/hexagonfs/mnt/vendor/persist
+    ln -sfn ../../../sensors /usr/local/share/y700-sns/hexagonfs/mnt/vendor/persist/sensors
+    mkdir -p /usr/local/share/y700-sns/hexagonfs/vendor/etc
+    ln -sfn ../../sensors /usr/local/share/y700-sns/hexagonfs/vendor/etc/sensors
+    chown -R fastrpc:fastrpc /usr/local/share/y700-sns/hexagonfs 2>/dev/null || true
+    chmod -R u+rwX,g+rwX,o+rX /usr/local/share/y700-sns/hexagonfs 2>/dev/null || true
+fi
+
+# Hexagon DSP & IIO Sensor Proxy systemd drop-ins
+mkdir -p /etc/systemd/system/hexagonrpcd.service.d /etc/systemd/system/iio-sensor-proxy.service.d
+rm -f /etc/systemd/system/iio-sensor-proxy.service.d/10-y700-ssc.conf
+
+if [ -f "$SCRIPT_DIR/fixes/power-and-sensors/hexagonrpcd-tb321fu.conf" ]; then
+    cp "$SCRIPT_DIR/fixes/power-and-sensors/hexagonrpcd-tb321fu.conf" /etc/systemd/system/hexagonrpcd.service.d/tb321fu.conf
+fi
+
+if [ -f "$SCRIPT_DIR/fixes/power-and-sensors/tb321fu-libssc.conf" ]; then
+    cp "$SCRIPT_DIR/fixes/power-and-sensors/tb321fu-libssc.conf" /etc/systemd/system/iio-sensor-proxy.service.d/tb321fu-libssc.conf
+fi
+
+systemctl daemon-reload || true
+systemctl enable --now qrtr-ns.service 2>/dev/null || true
+systemctl enable --now hexagonrpcd.service 2>/dev/null || true
+systemctl enable --now iio-sensor-proxy.service 2>/dev/null || true
+systemctl restart hexagonrpcd.service 2>/dev/null || true
+systemctl restart iio-sensor-proxy.service 2>/dev/null || true
 
 # ------------------------------------------------------------------------------
 # 5. Reboot to Android Utilities & Permissions

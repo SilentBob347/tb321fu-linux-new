@@ -8,12 +8,14 @@
 
 ## Solution:
 1. `70-y700-stylus.hwdb` overrides `EVDEV_ABS_00` and `EVDEV_ABS_01` axis resolutions to 136 and 135.
-2. `70-y700-stylus.rules` sets `ID_INPUT_TABLET_INTEGRATED=1` and binds the device directly to display output `WL_OUTPUT=DSI-1`. GNOME Mutter automatically rotates the digitizer coordinate matrix whenever the screen orientation changes.
+2. `70-y700-stylus.rules` sets `ID_INPUT_TABLET_INTEGRATED=1` and binds the device directly to display output `WL_OUTPUT=DSI-1`.
+3. `lenovo-y700-pen.tablet` (`/usr/share/libwacom/`): Declares the stylus as an integrated on-screen digitizer (`IntegratedIn=Display;System`). This allows GNOME Settings to recognize the pen, enable stylus configuration, and allows GNOME Mutter to automatically rotate pen coordinates 90°/180°/270° with the display.
 
 ## Manual Installation:
 ```bash
 sudo cp 70-y700-stylus.hwdb /etc/udev/hwdb.d/
 sudo cp 70-y700-stylus.rules /etc/udev/rules.d/
+sudo cp lenovo-y700-pen.tablet /usr/share/libwacom/
 sudo systemd-hwdb update
 sudo udevadm control --reload
 sudo udevadm trigger

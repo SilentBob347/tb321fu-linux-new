@@ -1,0 +1,13 @@
+[Device]
+Name=Lenovo Legion Y700 Stylus Pen
+ModelName=AP500U
+DeviceMatch=i2c|17ef|607b
+Class=ISDV4
+Width=5
+Height=7
+IntegratedIn=Display;System
+
+[Features]
+Stylus=true
+Touch=false
+Buttons=2

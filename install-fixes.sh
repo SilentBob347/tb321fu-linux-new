@@ -53,28 +53,54 @@ fi
 # ------------------------------------------------------------------------------
 # 2. Stylus & Digitizer Fixes
 # ------------------------------------------------------------------------------
-log "2/5 Installing Stylus & Digitizer hardware rules..."
-mkdir -p /etc/udev/hwdb.d /etc/udev/rules.d
+log "2/6 Installing Stylus, Digitizer & Touchscreen rules..."
+mkdir -p /etc/udev/hwdb.d /etc/udev/rules.d /etc/libwacom /usr/share/libwacom /etc/modules-load.d
 
 cp "$SCRIPT_DIR/fixes/stylus/70-y700-stylus.hwdb" /etc/udev/hwdb.d/
 cp "$SCRIPT_DIR/fixes/stylus/70-y700-stylus.rules" /etc/udev/rules.d/
+
+if [ -f "$SCRIPT_DIR/fixes/stylus/lenovo-y700-pen.tablet" ]; then
+    cp "$SCRIPT_DIR/fixes/stylus/lenovo-y700-pen.tablet" /etc/libwacom/
+    cp "$SCRIPT_DIR/fixes/stylus/lenovo-y700-pen.tablet" /usr/share/libwacom/
+fi
+
+echo "nt36523_ts" > /etc/modules-load.d/y700-touch.conf
 
 systemd-hwdb update || true
 udevadm control --reload || true
 udevadm trigger || true
 
 # ------------------------------------------------------------------------------
-# 3. Power & Sensors (Auto-Brightness)
+# 3. 16 GB ZRAM In-Memory Fast Swap
 # ------------------------------------------------------------------------------
-log "3/5 Installing Power & Ambient Sensor (ALS) profile..."
+log "3/6 Installing 16 GB ZRAM fast swap configuration..."
+if command -v apt-get >/dev/null 2>&1; then
+    if ! dpkg -s systemd-zram-generator >/dev/null 2>&1; then
+        apt-get update -qq || true
+        apt-get install -y -qq systemd-zram-generator || true
+    fi
+fi
+
+if [ -d "$SCRIPT_DIR/fixes/zram" ]; then
+    cp "$SCRIPT_DIR/fixes/zram/zram-generator.conf" /etc/systemd/zram-generator.conf
+    cp "$SCRIPT_DIR/fixes/zram/99-swap.conf" /etc/sysctl.d/99-swap.conf
+    sysctl --system >/dev/null 2>&1 || true
+    systemctl daemon-reload || true
+    systemctl restart systemd-zram-setup@zram0.service 2>/dev/null || true
+fi
+
+# ------------------------------------------------------------------------------
+# 4. Power & Sensors (Auto-Brightness)
+# ------------------------------------------------------------------------------
+log "4/6 Installing Power & Ambient Sensor (ALS) profile..."
 mkdir -p /etc/dconf/db/local.d
 cp "$SCRIPT_DIR/fixes/power-and-sensors/01-power" /etc/dconf/db/local.d/
 dconf update || true
 
 # ------------------------------------------------------------------------------
-# 4. Reboot to Android Utilities & Permissions
+# 5. Reboot to Android Utilities & Permissions
 # ------------------------------------------------------------------------------
-log "4/5 Installing Reboot to Android scripts & passwordless sudoers..."
+log "5/6 Installing Reboot to Android scripts & passwordless sudoers..."
 cp "$SCRIPT_DIR/fixes/reboot-to-android/back-to-android" /usr/local/sbin/
 chmod 755 /usr/local/sbin/back-to-android
 
@@ -102,9 +128,9 @@ for d in "$TARGET_HOME/Desktop" "$TARGET_HOME/Рабочий стол"; do
 done
 
 # ------------------------------------------------------------------------------
-# 5. GNOME Shell Extension
+# 6. GNOME Shell Extension
 # ------------------------------------------------------------------------------
-log "5/5 Installing GNOME Shell Extension in system power menu..."
+log "6/6 Installing GNOME Shell Extension in system power menu..."
 EXT_DIR="/usr/share/gnome-shell/extensions/reboot-to-android@sotiomake"
 mkdir -p "$EXT_DIR"
 cp "$SCRIPT_DIR/fixes/reboot-to-android/gnome-extension/reboot-to-android@sotiomake/metadata.json" "$EXT_DIR/"

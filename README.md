@@ -16,7 +16,8 @@ Based on the dual-boot architecture of [tb323fu-linux](https://github.com/joonho
 | **GPU / 3D Graphics** | ✅ Working | Adreno 750 (Mesa Turnip / Freedreno / Zink) |
 | **Display Panel** | ✅ Working | 8.8" 2560×1600 (CSOT / Novatek NT36523, Dual-DSI, 144Hz / 165Hz) |
 | **Touchscreen** | ✅ Working | Novatek NT36523 multi-touch over SPI (`spi4`) |
-| **Stylus / Pen** | ✅ Working | **Fixed:** hwdb scale fix (136/135) + Wayland DSI-1 sync (rotates with screen) |
+| **Stylus / Pen** | ✅ Working | **Fixed:** libwacom integration (`lenovo-y700-pen.tablet`), GNOME Settings, auto-rotation, hwdb (136/135) |
+| **ZRAM Swap** | ✅ Working | **New:** 16 GB high-speed in-memory swap (`zstd`, zero flash wear, `page-cluster=0`) |
 | **Internal Speakers** | ✅ Working | Dual AW882xx amplifiers on Secondary TDM |
 | **Microphone** | ✅ Working | Qualcomm WCD939x analog capture (ADC1) |
 | **External Monitor** | ✅ Working | **Fixed:** Type-C DP Alt Mode audio routing (no false speaker mute) |
@@ -39,10 +40,11 @@ sudo ./install-fixes.sh
 
 This single command automatically deploys:
 1. **ALSA UCM audio fix** (fixes internal speakers dropping when plugging into USB-C external monitors / docks).
-2. **Stylus scale & orientation fix** (1:1 coordinate mapping and automatic rotation sync with display).
-3. **GNOME Shell Android Reboot extension** (native button in quick settings shutdown menu).
-4. **Desktop & Application launcher** for 1-click reboot to Android.
-5. **Auto-brightness profile** (ambient light sensor integration in GNOME).
+2. **Stylus scale, orientation & libwacom fix** (1:1 coordinate mapping, libwacom profile for GNOME Settings, and automatic rotation sync with display).
+3. **16 GB ZRAM Fast In-Memory Swap** (`zstd` compression, zero disk wear, latency optimized with `page-cluster=0`).
+4. **GNOME Shell Android Reboot extension** (native button in quick settings shutdown menu).
+5. **Desktop & Application launcher** for 1-click reboot to Android.
+6. **Auto-brightness profile** (ambient light sensor integration in GNOME).
 
 ---
 
@@ -53,21 +55,26 @@ This single command automatically deploys:
 * **Cause:** DisplayPort AUX channel lines in Type-C share physical SBU pins with Qualcomm WCD939x analog headset detection (MBHC). Cable connection falsely triggered "Headphones plugged in". Stock UCM had `JackHWMute "Speaker"` and a missing mixer element, crashing PipeWire's sink.
 * **Solution:** Removed hardware muting, eliminated dead mixer controls, and set internal speakers and microphone to permanent high priority (`200`). Speakers and mic now play simultaneously without interruption.
 
-### 2. Stylus Calibration & Wayland Orientation (`fixes/stylus/`)
-* **Problem:** Pen pointer had wrong coordinate scaling and did not rotate when rotating the tablet in GNOME.
+### 2. Stylus Calibration, Libwacom & Wayland Orientation (`fixes/stylus/`)
+* **Problem:** Pen pointer had wrong coordinate scaling, did not rotate when rotating the tablet in GNOME, and was not recognized in GNOME Settings ("No tablet found").
 * **Solution:**
   * [`70-y700-stylus.hwdb`](fixes/stylus/70-y700-stylus.hwdb): Corrects `EVDEV_ABS_00=::136` and `EVDEV_ABS_01=::135`.
-  * [`70-y700-stylus.rules`](fixes/stylus/70-y700-stylus.rules): Declares `ID_INPUT_TABLET_INTEGRATED=1` and assigns `WL_OUTPUT=DSI-1` so Wayland compositor rotates the pen together with the display.
+  * [`70-y700-stylus.rules`](fixes/stylus/70-y700-stylus.rules): Declares `ID_INPUT_TABLET_INTEGRATED=1` and assigns `WL_OUTPUT=DSI-1`.
+  * [`lenovo-y700-pen.tablet`](fixes/stylus/lenovo-y700-pen.tablet): Libwacom profile defining the pen as an integrated on-screen digitizer (`IntegratedIn=Display;System`). GNOME Mutter automatically rotates the pen matrix with the screen, and GNOME Settings exposes full stylus configuration.
 
-### 3. Native "Reboot to Android" Extension (`fixes/reboot-to-android/`)
+### 3. 16 GB In-Memory ZRAM Fast Swap (`fixes/zram/`)
+* **Problem:** Heavy multitasking requires swap, but swapping to internal UFS storage causes flash wear and I/O latency.
+* **Solution:** Enabled `CONFIG_ZRAM=y` and `CONFIG_ZSWAP=y` in kernel. Configured `systemd-zram-generator` with 16 GB virtual capacity, `zstd` compression (~3:1 ratio), `vm.swappiness=100`, and `vm.page-cluster=0` for minimal latency.
+
+### 4. Native "Reboot to Android" Extension (`fixes/reboot-to-android/`)
 * Built-in GNOME Shell extension (`reboot-to-android@sotiomake`) adding **«Reboot to Android…»** to the system power menu (right next to Log Out / Power Off).
 * Shows a standard confirmation dialog and cleanly swaps the boot image and reboots into ZUI.
 * Desktop shortcut on `~/Desktop` for easy 1-click access.
 * Emergency hardware combo: **Hold Volume Up + Volume Down for 10 seconds** to trigger reboot if GUI freezes.
 
-### 4. Camera CAMSS Endpoint Fix (`patches/dts-camera-fix.patch`)
-* **Problem:** Camera subsystem failed to probe sensors due to an invalid placeholder `camera@11` on CSI port 3.
-* **Solution:** Disabled conflicting node in DTS; both `sc820cs` (rear) and `sc202cs` (front) cameras now initialize cleanly and stream via `libcamera` and PipeWire.
+### 5. Camera CAMSS Endpoint Fix (`patches/dts-camera-fix.patch`)
+* **Problem:** Camera subsystem failed to probe sensors due to an invalid placeholder `camera@11` on CSI port 3, preventing V4L2 async notifier from completing.
+* **Solution:** Disabled conflicting node in DTS; both `sc820cs` (rear) and `sc202cs` (macro) cameras now initialize cleanly and stream via `libcamera` and PipeWire.
 
 ---
 

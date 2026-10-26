@@ -1,0 +1,92 @@
+From 4c47a7c91ba85363946a963ede3c139a6d6493f5 Mon Sep 17 00:00:00 2001
+From: sotiomake <vitalo233@gmail.com>
+Date: Mon, 26 Oct 2026 12:29:41 +0200
+Subject: [PATCH] tb321fu: disable camera@11 and set pen bus to I2C for
+ libwacom
+
+---
+ .../boot/dts/qcom/sm8650-lenovo-tb321fu.dts   | 39 +------------------
+ drivers/input/touchscreen/nt36523/nt36xxx.c   |  5 ++-
+ 2 files changed, 6 insertions(+), 38 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/qcom/sm8650-lenovo-tb321fu.dts b/arch/arm64/boot/dts/qcom/sm8650-lenovo-tb321fu.dts
+index a58bd8310..9d886765c 100644
+--- a/arch/arm64/boot/dts/qcom/sm8650-lenovo-tb321fu.dts
++++ b/arch/arm64/boot/dts/qcom/sm8650-lenovo-tb321fu.dts
+@@ -1641,11 +1641,6 @@ csiphy1_ep: endpoint {
+ 
+ 		port@3 {
+ 			reg = <3>;
+-
+-			csiphy3_ep: endpoint {
+-				data-lanes = <0 1 2 3>;
+-				remote-endpoint = <&gc13a0_ep>;
+-			};
+ 		};
+ 
+ 		port@5 {
+@@ -1672,43 +1667,13 @@ &cci0_i2c0 {
+ 	camera@11 {
+ 		compatible = "galaxycore,gc13a0";
+ 		reg = <0x11>;
+-
+-		pinctrl-0 = <&cam0_default>, <&cam0_reset_default>;
+-		pinctrl-names = "default";
+-		reset-gpios = <&tlmm 11 GPIO_ACTIVE_LOW>;
+-
+-		clocks = <&camcc CAM_CC_MCLK0_CLK>;
+-		assigned-clocks = <&camcc CAM_CC_MCLK0_CLK>;
+-		assigned-clock-rates = <19200000>;
+-
+-		avdd-supply = <&cam_ldo4_2p8>;
+-		dovdd-supply = <&cam_ldo3_1p8>;
+-		dvdd-supply = <&cam_ldo1_1p2>;
+-		lens-focus = <&gc13a0_vcm>;
+-		flash-leds = <&pm8550_flash_yellow &pm8550_flash_white>;
+-
+-		orientation = <1>;
+-		rotation = <90>;
+-
+-		port {
+-			gc13a0_ep: endpoint {
+-				data-lanes = <0 1 2 3>;
+-				link-frequencies = /bits/ 64 <560000000>;
+-				remote-endpoint = <&csiphy3_ep>;
+-			};
+-		};
++		status = "disabled";
+ 	};
+ 
+-	/*
+-	 * Android actuator packet power sequence uses vendor camera LDO
+-	 * seq_type 17, which maps to ET5907 LDO5 at 2.784 V. Using the
+-	 * PMIC cam_vaf rail leaves GT9772B unpowered and causes I2C NACK.
+-	 */
+ 	gc13a0_vcm: camera-lens@c {
+ 		compatible = "giantec,gt9772b";
+ 		reg = <0x0c>;
+-		vin-supply = <&cam_ldo5_2p78>;
+-		vdd-supply = <&cam_ldo5_2p78>;
++		status = "disabled";
+ 	};
+ };
+ 
+diff --git a/drivers/input/touchscreen/nt36523/nt36xxx.c b/drivers/input/touchscreen/nt36523/nt36xxx.c
+index c7bbfbfbd..3d6eadebc 100644
+--- a/drivers/input/touchscreen/nt36523/nt36xxx.c
++++ b/drivers/input/touchscreen/nt36523/nt36xxx.c
+@@ -1517,7 +1517,10 @@ static int32_t nvt_ts_probe(struct spi_device *client)
+ 		sprintf(ts->pen_phys, "input/pen");
+ 		ts->pen_input_dev->name = NVT_PEN_NAME;
+ 		ts->pen_input_dev->phys = ts->pen_phys;
+-		ts->pen_input_dev->id.bustype = BUS_SPI;
++		ts->pen_input_dev->id.bustype = BUS_I2C;
++		ts->pen_input_dev->id.vendor = 0x17ef;
++		ts->pen_input_dev->id.product = 0x607b;
++		ts->pen_input_dev->id.version = 0x0001;
+ 
+ 		//---register pen input device---
+ 		ret = input_register_device(ts->pen_input_dev);
+-- 
+2.53.0
+
